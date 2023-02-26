@@ -1,0 +1,160 @@
+************************************************************************************************
+Dynamic cast/vtable:
+************************************************************************************************
+The most important thing about the dynamic cast is that it should be applied to a polymorphic type. Without that, dynamic cast works like a static cast.
+What is a polymorphic type? Any class that has at least one virtual method or virtual destructor or virtual base class is polymorphic. 
+Only those types have a virtual method table (VMT) in their data layout. Classes that do not have anything virtual do not have VMT's. 
+The standard does not say how polymorphism and virtual methods should be implemented, yet all compilers, as far as I know, do this.
+In your examples classes are not polymorphic. In my opinion, it would be better if compilers would issue an error when the dynamic cast is applied to 
+a non-polymorphic type. Nevertheless, they do not do this. This adds to the confusion.
+VMT pointers for all classes are different. This means that on the runtime looking at:
+Animal* animal;
+it is possible to know what the real class of the object is. Is it a Bird or a Dog or something else. Knowing the real type from the value of VMT, 
+generated code can make an adjustment if this is needed.
+Here is an example:
+class Animal   { virtual ~Animal();   int m1; };
+class Creature { virtual ~Creature(); int m2; };
+class Bird : public Animal, Creature { };
+Bird *bird = new Bird();
+Creature *creature = dynamic_cast<Creature*>(bird);
+Note that creature is not the first base class. This means that the pointer will be shifted to point to the right part of the object. Nevertheless, 
+the following will still be working:
+Animal *animal = dynamic_cast<Animal*>(creature);   // Case2.
+because VMT of Creature when it is part of other class will not be the same to VMT of the object when it is used stand-alone:
+Creature *creature1 = new Creature();
+This distinction allows a proper implementation of a dynamic cast. In the example Case2 the pointer will be shifted back. I tested this. This works.
+
+************************************************************************************************
+Multiply inheritance/Diamond-shape problem:
+************************************************************************************************
+Dog ond Bird have own virtual eat() version
+In this case the compiler does not know which version to call:
+class DogBird : public Dog, public Bird {
+};
+int main() {
+   DogBird myConfusedAnimal;
+   myConfusedAnimal.eat(); // Error! Ambiguous call to method eat()
+}
+To solve this we can:
+1.  
+dynamic_cast<Dog&>(myConfusedAnimal).eat(); // Calls Dog::eat()
+myConfusedAnimal.Dog::eat(); // Calls Dog::eat()
+2.
+class DogBird : public Dog, public Bird {
+public:
+void eat() override {Dog::eat(); // Explicitly call Dog's version of eat() }
+};
+3.
+class DogBird : public Dog, public Bird {
+public:
+using Dog::eat; // Explicitly inherit Dog's version of eat()
+};
+The best way to use these “diamond-shaped” class hierarchies is to make the topmost class an abstract base class with all methods declared as pure virtual:
+class Animal {
+public:
+virtual void eat() = 0;
+};
+class Dog : public Animal {
+public:
+virtual void bark() { cout << "Woof!" << endl; }
+void eat() override { cout << "The dog ate." << endl; }
+};
+class Bird : public Animal {
+public:
+virtual void chirp() { cout << "Chirp!" << endl; }
+void eat() override { cout << "The bird ate." << endl; }
+};
+class DogBird : public Dog, public Bird {
+public:
+using Dog::eat;
+};
+One of the most compelling and simple uses of multiple inheritance is for the implementation of mixin classes other stuff 
+However, when Animal is inherited virtually, DogBird has only
+one subobject of class Animal , so there will be no ambiguity with calling sleep()
+Virtual base classes are a great way to avoid ambiguity in class hierarchies
+
+************************************************************************************************
+Static initalization fiasco
+************************************************************************************************
+The static initialization order fiasco refers to the ambiguity in the order that objects with static storage duration in different translation units are initialized in. If an object in one translation unit relies on an object in another translation unit already being initialized, a crash can occur if the compiler decides to initialize them in the wrong order.
+extern int staticA;   // (1)
+auto staticB = staticA;
+The lazy initialization can also be used to overcome the static initialization order fiasco:
+module1.cpp:
+int& staticA() {  
+    static auto staticA  = quad(5);   // (1)
+    return staticA;
+}
+module2.cpp:
+int& staticA();           // (2)
+auto staticB = staticA(); // (3)
+
+************************************************************************************************
+Non public inheritance
+************************************************************************************************
+Declaring the relationship with the parent to be protected means that all public methods and data
+members from the base class become protected in the context of the derived class. Similarly, specify-
+ing private inheritance means that all public and protected methods and data members of the
+base class become private in the derived class.
+What the differ between reiterpret_cast & static_cast & what is const_cast
+A static_cast is a cast from one type to another that (intuitively) is a cast that could under some circumstance succeed and 
+be meaningful in the absence of a dangerous cast. 
+For example, you can static_cast a void* to an int* 
+However, you cannot static_cast an int* to a double*
+A reinterpret_cast is a cast that represents an unsafe 
+conversion that might reinterpret the bits of one value as the bits of another value
+
+************************************************************************************************
+What the diff between decltype(x) & auto
+************************************************************************************************
+decltype does not strip ref & const
+Use auto and decltype to declare a function template whose return type depends on the types of its template arguments.
+Also using in Forwarding functions wrap calls to other functions
+
+************************************************************************************************
+What std::move actualy do vs dst::froward()
+************************************************************************************************
+
+************************************************************************************************
+In which order class members initialized
+************************************************************************************************
+— First, and only for the constructor of the most derived class as described below, virtual base classes shall be initialized in the order
+ they appear on a depth-first left-to-right traversal of the directed acyclic graph of base classes, where “left-to-right” is the order of 
+ appearance of the base class names in the derived class base-specifier-list.
+— Then, direct base classes shall be initialized in declaration order as they appear in the base-specifier-list (regardless of the order of
+ the mem-initializers).
+— Then, nonstatic data members shall be initialized in the order they were declared in the class definition (again regardless of the order 
+of the mem-initializers).
+— Finally, the body of the constructor is executed. 
+[Note: the declaration order is mandated to ensure that base and member subobjects are destroyed in the reverse order of initialization. ]
+
+************************************************************************************************
+What is the use o mutable
+************************************************************************************************
+Occasionally I use it to mark a mutex or other thread synchronisation primitive as being mutable so that accessors/query methods, which are 
+typically marked const can still lock the mutex.
+
+************************************************************************************************
+Big-O notation means
+************************************************************************************************
+O(1) - time independent of size / O(n) - running time proportional to the input size
+
+************************************************************************************************
+Map vs unordered_map 
+************************************************************************************************
+                                    | map                           | unordered_map
+--------------------------------------------------------------------------
+Ordering                            | increasing  order   | no ordering
+                                    | (by default)        |
+Implementation                      | Self balancing BST  | Hash Table
+                                    | like Red-Black Tree |  
+search time                         | log(n)              | O(1) -> Average 
+                                    |                     | O(n) -> Worst Case
+Insertion time                      | log(n) + Rebalance  | Same as search
+Deletion time                       | log(n) + Rebalance  | Same as search
+What is rb-tree:
+Use std::map when You need ordered data or You would have to print/access the data (in sorted order). or You need predecessor/successor of elements.
+
+Use std::unordered_map when U need to keep count of some data (Example – strings) and no ordering is required or U need single element access i.e. no traversal.
+
+RB-binary tree solves complicated realization of 2-3 Tree. 
